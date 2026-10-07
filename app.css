@@ -217,6 +217,7 @@ a.btn { text-decoration: none; }
 .stage video { width: 100%; height: 100%; object-fit: contain; display: block; background: var(--stage); }
 .stage.mirror video { transform: scaleX(-1); }
 .stage .loading { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255,255,255,.7); font-size: 14px; }
+.stage .loading[hidden] { display: none; }
 .stage .tapzone { position: absolute; inset: 0; border: 0; background: transparent; }
 .stage .badge { position: absolute; left: 12px; bottom: 12px; background: rgba(9, 36, 36, .55); color: #fff; font-size: 13px; padding: 4px 10px; border-radius: 99px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); pointer-events: none; }
 .stage-hidden { background: var(--bg-sunk); }
