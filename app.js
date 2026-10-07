@@ -347,6 +347,8 @@ function renderHome() {
   view.querySelector("#start").onclick = () => startSession("daily");
   const sp = view.querySelector("#speed"); if (sp) sp.onclick = () => startSession("speed");
   const it = view.querySelector("#install-x"); if (it) it.onclick = () => { S.installTipHidden = true; save(); it.closest(".speedcheck").remove(); };
+  const inst = view.querySelector("#install-now");
+  if (inst) inst.onclick = async () => { if (!installPrompt) return; installPrompt.prompt(); const r = await installPrompt.userChoice.catch(() => null); installPrompt = null; inst.hidden = true; if (r && r.outcome === "accepted") toast("SignBack is on your home screen."); };
 
   const decksUl = view.querySelector("#decks");
   for (const d of DECKS) {
@@ -392,12 +394,21 @@ function weekStrip() {
   }
   return out + "</div>";
 }
+const UA = navigator.userAgent;
+const IS_IOS = /iphone|ipad|ipod/i.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const IS_ANDROID = /android/i.test(UA);
+const IS_SAMSUNG = /SamsungBrowser/i.test(UA);
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; const b = document.getElementById("install-now"); if (b) b.hidden = false; });
+window.addEventListener("appinstalled", () => { S.installTipHidden = true; save(); const t = document.getElementById("install-tip"); if (t) t.remove(); });
 function isStandalone() { return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; }
 function installTip() {
   if (isStandalone() || S.installTipHidden) return "";
-  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const how = ios ? "In Safari, tap the Share button, then Add to Home Screen." : "In Chrome, open the menu, then tap Install app or Add to Home screen.";
-  return `<div class="speedcheck" style="margin-top:12px">${ICON.hand}<div><b>Put SignBack on your home screen</b><span>${how} It opens like an app and works offline.</span></div><button class="icon-btn" id="install-x" aria-label="Hide this tip">${ICON.close}</button></div>`;
+  const how = IS_IOS ? "In Safari, tap the Share button, then Add to Home Screen."
+    : IS_SAMSUNG ? "Tap the menu button (three lines) at the bottom, then Add page to, then Home screen."
+    : IS_ANDROID ? "In Chrome, tap the three dots at the top right, then Add to Home screen or Install app."
+    : "Open this page on your phone to add it to your home screen.";
+  return `<div class="speedcheck" id="install-tip" style="margin-top:12px">${ICON.hand}<div><b>Put SignBack on your home screen</b><span>${how} It opens like an app and works offline.</span><button class="btn btn-primary" id="install-now" style="margin-top:10px;min-height:44px" ${installPrompt ? "" : "hidden"}>Install SignBack</button></div><button class="icon-btn" id="install-x" aria-label="Hide this tip">${ICON.close}</button></div>`;
 }
 
 /* ---------------- sessions ---------------- */
@@ -746,6 +757,60 @@ function runDrills(b, host, countEl) {
   show();
 }
 
+
+/* ---------------- calendar reminder ---------------- */
+function nextStart(hhmm) {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), +hhmm.slice(0, 2), +hhmm.slice(2));
+  if (d <= now) d.setDate(d.getDate() + 1);
+  return d;
+}
+function googleCalendarURL(hhmm) {
+  const start = nextStart(hhmm), end = new Date(start.getTime() + 5 * 60000);
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmt = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+  const appURL = new URL("./", location.href).href;
+  return "https://calendar.google.com/calendar/render?action=TEMPLATE"
+    + "&text=" + encodeURIComponent("SignBack: 5 minutes of ASL")
+    + "&details=" + encodeURIComponent("Open SignBack: " + appURL)
+    + `&dates=${fmt(start)}/${fmt(end)}&ctz=${encodeURIComponent(tz)}`
+    + "&recur=" + encodeURIComponent("RRULE:FREQ=DAILY");
+}
+function androidCalendarIntent(hhmm) {
+  // Opens the phone's own calendar app (Samsung Calendar or Google Calendar) with a daily event filled in.
+  const start = nextStart(hhmm), end = new Date(start.getTime() + 5 * 60000);
+  const appURL = new URL("./", location.href).href;
+  return "intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.item/event"
+    + ";S.title=" + encodeURIComponent("SignBack: 5 minutes of ASL")
+    + ";S.description=" + encodeURIComponent("Open SignBack: " + appURL)
+    + ";S.rrule=" + encodeURIComponent("FREQ=DAILY")
+    + `;l.beginTime=${start.getTime()};l.endTime=${end.getTime()}`
+    + ";S.browser_fallback_url=" + encodeURIComponent(googleCalendarURL(hhmm)) + ";end";
+}
+function calendarHref(hhmm) {
+  if (IS_ANDROID) return androidCalendarIntent(hhmm);
+  if (IS_IOS) return `reminders/signback-${hhmm}.ics`;
+  return googleCalendarURL(hhmm);
+}
+function calendarHint() {
+  const base = "A daily 5-minute event with a link back here.";
+  if (IS_ANDROID) return `${base} Your calendar app opens with it filled in: check that it says repeat every day, then tap Save. <a href="#" id="calalt">Calendar didn't open?</a>`;
+  if (IS_IOS) return `${base} Tap Add All when your calendar asks. It follows your phone's local time, so it works when you travel too.`;
+  return `${base} Opens Google Calendar. <a href="#" id="calalt">Use a calendar file instead</a>`;
+}
+function renderSettingsLinks(view) {
+  const hhmm = S.settings.reminder;
+  const cal = view.querySelector("#cal"); if (cal) cal.href = calendarHref(hhmm);
+  const alt = view.querySelector("#calalt");
+  if (alt) {
+    alt.href = IS_ANDROID ? googleCalendarURL(hhmm) : `reminders/signback-${hhmm}.ics`;
+    alt.target = IS_ANDROID ? "_blank" : "";
+    alt.rel = "noopener";
+    alt.onclick = null;
+  }
+}
+
 /* ---------------- settings ---------------- */
 function fmtTime(hhmm) { const h = +hhmm.slice(0, 2), m = hhmm.slice(2); const h12 = ((h + 11) % 12) + 1; return `${h12}:${m} ${h < 12 ? "AM" : "PM"}`; }
 function segCtrl(name, options, value) {
@@ -769,8 +834,8 @@ function renderSettings() {
       <h2>Evening reminder</h2>
       <div class="field"><label for="rt">Remind me at</label>
         <select id="rt" class="textin">${REMINDER_TIMES.map((t) => `<option value="${t}" ${t === st.reminder ? "selected" : ""}>${fmtTime(t)}</option>`).join("")}</select>
-        <a class="btn btn-quiet btn-wide" id="ics" href="reminders/signback-${st.reminder}.ics">${ICON.calendar}Add to my calendar</a>
-        <span class="hint">Adds a daily 5-minute event with an alert to your phone's calendar, with a link back here. It follows your phone's local time, so it works when you travel too.</span></div>
+        <a class="btn btn-quiet btn-wide" id="cal" href="${calendarHref(st.reminder)}" ${IS_ANDROID || IS_IOS ? "" : 'target="_blank" rel="noopener"'}>${ICON.calendar}Add to my calendar</a>
+        <span class="hint" id="calhint">${calendarHint()}</span></div>
     </section>
     <section class="section">
       <h2>Offline and backup</h2>
@@ -796,8 +861,9 @@ function renderSettings() {
     st[name] = name === "theme" ? v : name === "mirror" ? v === "true" : Number(v);
     save(); if (name === "theme") applyTheme();
   });
-  const rt = view.querySelector("#rt"), ics = view.querySelector("#ics");
-  rt.onchange = () => { st.reminder = rt.value; save(); ics.href = `reminders/signback-${rt.value}.ics`; };
+  const rt = view.querySelector("#rt");
+  rt.onchange = () => { st.reminder = rt.value; save(); renderSettingsLinks(view); };
+  renderSettingsLinks(view);
   view.querySelector("#dl").onclick = (e) => saveAllVideos(e.currentTarget);
   view.querySelector("#bk").onclick = async () => {
     const code = btoa(unescape(encodeURIComponent(JSON.stringify(S))));
