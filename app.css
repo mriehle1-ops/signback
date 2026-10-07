@@ -334,7 +334,7 @@ select.textin { appearance: none; -webkit-appearance: none; }
 .welcome .steps li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; color: var(--text-soft); }
 .welcome .steps li b { color: var(--text); font-weight: 650; display: block; }
 .welcome .steps svg { width: 24px; height: 24px; color: var(--marigold); margin-top: 1px; }
-.welcome .push { margin-top: auto; padding-top: 24px; display: grid; gap: 10px; }
+.welcome .push { margin-top: auto; padding-top: 28px; display: grid; gap: 10px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

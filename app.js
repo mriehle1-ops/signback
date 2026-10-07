@@ -73,7 +73,7 @@ function face(kind, size = 96) {
 
 /* ---------------- storage ---------------- */
 function freshState() {
-  return { v: 1, cards: {}, days: {}, grammar: {}, onboarded: false, installTipHidden: false,
+  return { v: 1, cards: {}, days: {}, grammar: {}, onboarded: false, installTipHidden: false, asked: {},
     settings: { name: "", minutes: 5, newCap: 8, speed: 1, mirror: false, theme: "auto", reminder: "2000" } };
 }
 function load() {
@@ -82,7 +82,7 @@ function load() {
     if (raw) {
       const s = JSON.parse(raw);
       const f = freshState();
-      return { ...f, ...s, settings: { ...f.settings, ...(s.settings || {}) } };
+      return { ...f, ...s, asked: { ...(s.asked || {}) }, settings: { ...f.settings, ...(s.settings || {}) } };
     }
   } catch (e) { /* storage unavailable */ }
   return freshState();
@@ -257,16 +257,10 @@ function renderWelcome() {
     <div class="topbar"><div class="wordmark">${logo()}SignBack</div></div>
     <div class="art">${welcomeArt()}</div>
     <h1>Get your ASL back.</h1>
-    <p class="lead">Five minutes a day with real signers on video. SignBack finds what you still remember and spends your time on what you don't.</p>
-    <ul class="steps">
-      <li>${ICON.check}<div><b>Check what you know.</b>Watch a sign and say whether you know it. Signs you remember get set aside.</div></li>
-      <li>${ICON.hand}<div><b>Relearn the rest.</b>Copy each new sign with your hands, then see it again right before you'd forget it.</div></li>
-      <li>${ICON.face}<div><b>Get the face right.</b>Short lessons on the eyebrows, head shakes and mouth shapes that carry ASL grammar.</div></li>
-    </ul>
+    <p class="lead">Five minutes a day. Watch a sign, say whether you know it, and SignBack takes care of the rest.</p>
     <div class="push">
-      <label class="sr-only" for="nm">Your first name</label>
-      <input id="nm" class="textin" placeholder="Your first name (optional)" autocomplete="given-name">
-      <button class="btn btn-primary btn-wide" id="go">Start my first 5 minutes</button>
+      <button class="btn btn-primary btn-wide" id="go">Start</button>
+      <p class="small faint" style="text-align:center">No account, nothing to set up.</p>
     </div>
   </div>`);
   app.append(v);
@@ -276,7 +270,6 @@ function renderWelcome() {
     videoBlobURL(hello.id).then((u) => { vid.src = u; vid.play().catch(() => {}); v.querySelector(".art").append(vid); }).catch(() => {});
   }
   v.querySelector("#go").onclick = () => {
-    S.settings.name = v.querySelector("#nm").value.trim().slice(0, 30);
     S.onboarded = true; save();
     startSession("daily");
   };
@@ -404,6 +397,8 @@ window.addEventListener("appinstalled", () => { S.installTipHidden = true; save(
 function isStandalone() { return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; }
 function installTip() {
   if (isStandalone() || S.installTipHidden) return "";
+  const t = today();
+  if (!Object.keys(S.days).some((d) => +d < t && S.days[d].n > 0)) return "";
   const how = IS_IOS ? "In Safari, tap the Share button, then Add to Home Screen."
     : IS_SAMSUNG ? "Tap the menu button (three lines) at the bottom, then Add page to, then Home screen."
     : IS_ANDROID ? "In Chrome, tap the three dots at the top right, then Add to Home screen or Install app."
@@ -509,7 +504,8 @@ function insertLater(card, gap) { session.inserts.push({ at: session.n + gap, ca
 function renderCheck(view, item) {
   let st = stage(item.id);
   view.append(st, videoControls(() => st));
-  const prompt = el(`<p class="prompt">Know this one?</p>`);
+  const first = Object.keys(S.cards).length === 0 && session.n === 0;
+  const prompt = el(`<p class="prompt">${first ? "Watch the signer. Do you know this sign?" : "Know this one?"}</p>`);
   const zone = el(`<div class="answer-zone"></div>`);
   const actions = el(`<div class="actions"><div class="grade"><button class="btn btn-quiet" data-g="none">No idea</button><button class="btn btn-quiet" data-g="unsure">Not sure</button><button class="btn btn-primary" data-g="know">I know it</button></div></div>`);
   view.append(prompt, zone, actions);
@@ -618,18 +614,24 @@ function renderDone() {
   const head = pod === "evening" ? "Done for tonight." : "Nice work.";
   const bits = [];
   if (s.checked) bits.push(`You checked ${plural(s.checked, "sign", "signs")} and already knew ${s.known}.`);
-  if (s.learned) bits.push(`${plural(s.learned, "sign", "signs")} relearned. They'll come back tomorrow.`);
-  if (s.reviewed) bits.push(`${plural(s.reviewed, "review", "reviews")} done.`);
+  if (s.learned) bits.push(`You relearned ${plural(s.learned, "sign", "signs")}. ${s.learned === 1 ? "It comes" : "They come"} back tomorrow.`);
+  if (s.reviewed) bits.push(`You reviewed ${plural(s.reviewed, "sign", "signs")}.`);
   const view = el(`<div>
     <div class="topbar"><div class="wordmark">${logo()}SignBack</div></div>
     <div class="done-hero"><h1>${head}</h1><p class="soft" style="margin-top:10px">${esc(bits.join(" ") || "Every minute counts.")}</p></div>
     <div class="stats"><div class="stat"><b>${s.known}</b><span>knew already</span></div><div class="stat"><b>${s.learned}</b><span>relearned</span></div><div class="stat"><b>${s.reviewed}</b><span>reviewed</span></div></div>
+    ${S.asked.reminder ? "" : `<div class="speedcheck" id="nudge" style="margin:0 0 22px">${ICON.clock}<div><b>Want a nudge tomorrow?</b><span>A 5-minute reminder in your calendar at ${fmtTime(S.settings.reminder)}. You can change the time later.</span>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><a class="btn btn-primary" id="nudge-yes" style="min-height:44px" href="${calendarHref(S.settings.reminder)}">Remind me</a><button class="btn btn-quiet" id="nudge-no" style="min-height:44px">No thanks</button></div></div></div>`}
     <section class="section" style="margin-top:8px">${weekStrip()}<p class="streak-line">${streak() ? `${plural(streak(), "day", "days")} in a row.` : ""}</p></section>
     <div class="actions" style="position:static;background:none"><button class="btn btn-primary btn-wide" id="home">Back to home</button><button class="btn btn-ghost btn-wide" id="more">Go another 5 minutes</button></div>
   </div>`);
   app.append(view);
   view.querySelector("#home").onclick = () => go("#/");
   view.querySelector("#more").onclick = () => startSession(s.kind === "speed" ? "speed" : "daily", s.deck || null);
+  const ny = view.querySelector("#nudge-yes"), nn = view.querySelector("#nudge-no");
+  const closeNudge = () => { S.asked.reminder = true; save(); setTimeout(() => { const n = view.querySelector("#nudge"); if (n) n.remove(); }, 400); };
+  if (ny) { ny.onclick = closeNudge; if (!IS_ANDROID && !IS_IOS) { ny.target = "_blank"; ny.rel = "noopener"; } }
+  if (nn) nn.onclick = closeNudge;
 }
 
 /* ---------------- decks & sign sheet ---------------- */

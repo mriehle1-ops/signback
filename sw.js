@@ -1,5 +1,5 @@
 // SignBack service worker: app shell stays fresh, sign videos stay on the phone.
-const VERSION = "v1-20261006235306";
+const VERSION = "v1-20261006235819";
 const SHELL = `signback-shell-${VERSION}`;
 const VIDEOS = "signback-videos-v1";
 const SHELL_FILES = ["./", "index.html", "app.css", "app.js", "data/app-data.json", "fonts/bricolage.woff2", "manifest.webmanifest", "icons/icon-192.png", "icons/apple-touch-icon.png"];
